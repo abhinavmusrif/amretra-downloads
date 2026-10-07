@@ -79,27 +79,61 @@ import Foundation
 
 let args = CommandLine.arguments
 guard args.count == 3 else { exit(2) }
-let input = args[1]
-let output = args[2]
-guard let image = NSImage(contentsOfFile: input) else { exit(3) }
+guard let source = NSImage(contentsOfFile: args[1]) else { exit(3) }
 
-let canvasSize = NSSize(width: 1024, height: 1024)
-let canvas = NSImage(size: canvasSize)
-canvas.lockFocus()
-NSColor.clear.set()
-NSRect(origin: .zero, size: canvasSize).fill()
+let size = 1024
+guard let bitmap = NSBitmapImageRep(
+    bitmapDataPlanes: nil,
+    pixelsWide: size,
+    pixelsHigh: size,
+    bitsPerSample: 8,
+    samplesPerPixel: 4,
+    hasAlpha: true,
+    isPlanar: false,
+    colorSpaceName: .deviceRGB,
+    bytesPerRow: size * 4,
+    bitsPerPixel: 32
+) else { exit(4) }
+bitmap.size = NSSize(width: size, height: size)
+
+NSGraphicsContext.saveGraphicsState()
+guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else { exit(5) }
+NSGraphicsContext.current = context
+
+let canvasRect = NSRect(x: 0, y: 0, width: size, height: size)
+NSColor.clear.setFill()
+canvasRect.fill(using: .copy)
 
 let inset: CGFloat = 64
-let rect = NSRect(x: inset, y: inset, width: 1024 - inset * 2, height: 1024 - inset * 2)
-let clip = NSBezierPath(roundedRect: rect, xRadius: 205, yRadius: 205)
-clip.addClip()
-image.draw(in: rect)
-canvas.unlockFocus()
+let iconRect = NSRect(
+    x: inset,
+    y: inset,
+    width: CGFloat(size) - inset * 2,
+    height: CGFloat(size) - inset * 2
+)
+let mask = NSBezierPath(roundedRect: iconRect, xRadius: 205, yRadius: 205)
+mask.addClip()
+source.draw(
+    in: iconRect,
+    from: .zero,
+    operation: .sourceOver,
+    fraction: 1.0,
+    respectFlipped: true,
+    hints: [.interpolation: NSImageInterpolation.high]
+)
+context.flushGraphics()
+NSGraphicsContext.restoreGraphicsState()
 
-guard let tiff = canvas.tiffRepresentation,
-      let rep = NSBitmapImageRep(data: tiff),
-      let png = rep.representation(using: .png, properties: [:]) else { exit(4) }
-try png.write(to: URL(fileURLWithPath: output), options: .atomic)
+let corners = [(0,0), (size-1,0), (0,size-1), (size-1,size-1)]
+for (x, y) in corners {
+    guard let color = bitmap.colorAt(x: x, y: y), color.alphaComponent < 0.01 else {
+        fputs("Corner alpha validation failed at \(x),\(y)\n", stderr)
+        exit(6)
+    }
+}
+
+guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(7) }
+try png.write(to: URL(fileURLWithPath: args[2]), options: .atomic)
 SWIFT
 
 "$SWIFT_BIN" "$WORK/round_icon.swift" "$LOGO" "$MAC_ICON"
@@ -130,6 +164,7 @@ cp "$ICNS" "$RES/MegasMoves.icns"
 
 /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "$PLIST" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string MegasMoves.icns" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(date +%Y%m%d%H%M%S)" "$PLIST" >/dev/null 2>&1 || true
 
 echo "Re-signing repaired app..."
 codesign --force --deep --sign - "$APP"
@@ -146,7 +181,7 @@ rm -f "$OUT" "$SHA"
 
 echo "Creating corrected Intel DMG..."
 hdiutil create \
-  -volname "Megas Moves" \
+  -volname "Megas Moves Intel Fixed" \
   -srcfolder "$STAGE" \
   -ov \
   -format UDZO \
@@ -160,5 +195,17 @@ echo "SUCCESS"
 echo "Fixed DMG: $OUT"
 echo "Checksum:  $SHA"
 echo
-echo "Opening Downloads..."
-open -R "$OUT"
+echo "Refreshing macOS icon caches..."
+killall iconservicesagent >/dev/null 2>&1 || true
+killall Finder >/dev/null 2>&1 || true
+killall Dock >/dev/null 2>&1 || true
+
+echo "Mounting the corrected DMG so there is no confusion with the old one..."
+for vol in /Volumes/"Megas Moves Intel Fixed"*; do
+  [ -d "$vol" ] && hdiutil detach "$vol" >/dev/null 2>&1 || true
+done
+hdiutil attach -nobrowse "$OUT" >/dev/null
+open "/Volumes/Megas Moves Intel Fixed"
+
+echo
+echo "The corrected volume is named: Megas Moves Intel Fixed"

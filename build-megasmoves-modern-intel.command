@@ -141,7 +141,7 @@ done
 
 FULL_CORE=0
 CORE_BIN=""
-BROWSERS=""
+BROWSER_RUNTIME=""
 
 if [ -n "$PY" ]; then
   echo "      Python: $($PY --version)"
@@ -163,12 +163,16 @@ if [ -n "$PY" ]; then
   echo "      Running focused operator tests..."
   (
     cd "$SRC"
-    "$VPY" -m pytest -q       worker/tests/test_native_desktop_bridge.py       worker/tests/test_native_core_mcp_stdio.py       worker/tests/test_shared_context.py       worker/tests/test_actions.py       worker/tests/local/test_peer_mesh_auth.py       worker/tests/local/test_peer_pairing_gate.py
+    "$VPY" -m pytest -q       worker/tests/test_native_desktop_bridge.py       worker/tests/test_native_core_mcp_stdio.py       worker/tests/test_browser_operator_contract.py       worker/tests/test_shared_context.py       worker/tests/test_actions.py       worker/tests/local/test_peer_mesh_auth.py       worker/tests/local/test_peer_pairing_gate.py
   )
 
-  BROWSERS="$WORK/ms-playwright"
-  mkdir -p "$BROWSERS"
-  PLAYWRIGHT_BROWSERS_PATH="$BROWSERS" "$VPY" -m playwright install chromium
+  echo "      Building verified Megas Browser runtime..."
+  (
+    cd "$SRC"
+    "$VPY" worker/scripts/browser_runtime_build.py "$WORK/browser-runtime"
+  )
+  BROWSER_RUNTIME="$WORK/browser-runtime"
+  test -s "$BROWSER_RUNTIME/megas-browser-runtime.json"
 
   (
     cd "$SRC"
@@ -188,15 +192,25 @@ out, err = p.communicate(request, timeout=30)
 line = next((line for line in out.splitlines() if line.strip()), "")
 if not line:
     raise SystemExit("Core produced no response: " + err[-2000:])
-json.loads(line)
-print("      Core smoke test passed.")
+data = json.loads(line)
+if data.get("ok") is not True or "result" not in data:
+    raise SystemExit("Core returned an invalid desktop envelope: " + line[:2000])
+result = data["result"]
+for key in ("local_testing", "account", "agents", "tasks", "actions", "terminals", "activity"):
+    if key not in result:
+        raise SystemExit("Core snapshot is missing " + key)
+print("      Core snapshot envelope + product surfaces verified.")
 PY
   FULL_CORE=1
 else
   echo "      Python 3.11+ is not installed. Using installed Megas core safely."
   EXISTING="/Applications/Megas Moves.app"
   CORE_BIN="$EXISTING/Contents/MacOS/MegasMoves.Core"
-  BROWSERS="$EXISTING/Contents/Resources/ms-playwright"
+  if [ -d "$EXISTING/Contents/Resources/browser-runtime" ]; then
+    BROWSER_RUNTIME="$EXISTING/Contents/Resources/browser-runtime"
+  elif [ -d "$EXISTING/Contents/Resources/ms-playwright" ]; then
+    BROWSER_RUNTIME="$EXISTING/Contents/Resources/ms-playwright"
+  fi
   if [ ! -x "$CORE_BIN" ]; then
     echo "ERROR: No reusable installed Megas core was found."
     echo "Install Python 3.11+ or keep the existing Megas Moves app in /Applications."
@@ -271,8 +285,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$UI_BIN" "$APP/Contents/MacOS/MegasMoves"
 cp "$CORE_BIN" "$APP/Contents/MacOS/MegasMoves.Core"
-if [ -d "$BROWSERS" ]; then
-  cp -R "$BROWSERS" "$APP/Contents/Resources/ms-playwright"
+if [ -n "$BROWSER_RUNTIME" ] && [ -d "$BROWSER_RUNTIME" ]; then
+  cp -R "$BROWSER_RUNTIME" "$APP/Contents/Resources/browser-runtime"
 fi
 cp "$ICON_WORK/MegasMoves.icns" "$APP/Contents/Resources/MegasMoves.icns"
 chmod +x "$APP/Contents/MacOS/MegasMoves" "$APP/Contents/MacOS/MegasMoves.Core"

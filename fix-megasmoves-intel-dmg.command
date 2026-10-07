@@ -113,67 +113,99 @@ import AppKit
 import Foundation
 
 let args = CommandLine.arguments
-guard args.count == 3 else { exit(2) }
-guard let source = NSImage(contentsOfFile: args[1]) else { exit(3) }
+guard args.count == 3 else {
+    FileHandle.standardError.write(Data("usage: round_icon input.png output.png\n".utf8))
+    exit(2)
+}
 
-let size = 1024
+let inputURL = URL(fileURLWithPath: args[1])
+let outputURL = URL(fileURLWithPath: args[2])
+
+guard let source = NSImage(contentsOf: inputURL) else {
+    FileHandle.standardError.write(Data("could not load source image\n".utf8))
+    exit(3)
+}
+
+let pixels = 1024
+let side = CGFloat(pixels)
+
 guard let bitmap = NSBitmapImageRep(
     bitmapDataPlanes: nil,
-    pixelsWide: size,
-    pixelsHigh: size,
+    pixelsWide: pixels,
+    pixelsHigh: pixels,
     bitsPerSample: 8,
     samplesPerPixel: 4,
     hasAlpha: true,
     isPlanar: false,
     colorSpaceName: .deviceRGB,
-    bytesPerRow: size * 4,
-    bitsPerPixel: 32
-) else { exit(4) }
-bitmap.size = NSSize(width: size, height: size)
+    bytesPerRow: 0,
+    bitsPerPixel: 0
+) else {
+    FileHandle.standardError.write(Data("could not create RGBA bitmap\n".utf8))
+    exit(4)
+}
+
+bitmap.size = NSSize(width: side, height: side)
+
+guard let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else {
+    FileHandle.standardError.write(Data("could not create graphics context\n".utf8))
+    exit(5)
+}
 
 NSGraphicsContext.saveGraphicsState()
-guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else { exit(5) }
-NSGraphicsContext.current = context
+NSGraphicsContext.current = graphics
 
-let canvasRect = NSRect(x: 0, y: 0, width: size, height: size)
+let canvas = NSRect(x: 0, y: 0, width: side, height: side)
 NSColor.clear.setFill()
-canvasRect.fill(using: .copy)
+canvas.fill(using: .copy)
 
 let inset: CGFloat = 64
 let iconRect = NSRect(
     x: inset,
     y: inset,
-    width: CGFloat(size) - inset * 2,
-    height: CGFloat(size) - inset * 2
+    width: side - inset * 2,
+    height: side - inset * 2
 )
+
 let mask = NSBezierPath(roundedRect: iconRect, xRadius: 205, yRadius: 205)
 mask.addClip()
+
 source.draw(
     in: iconRect,
-    from: .zero,
+    from: NSRect(origin: .zero, size: source.size),
     operation: .sourceOver,
-    fraction: 1.0,
-    respectFlipped: true,
-    hints: [.interpolation: NSImageInterpolation.high]
+    fraction: 1.0
 )
-context.flushGraphics()
+
+graphics.flushGraphics()
 NSGraphicsContext.restoreGraphicsState()
 
-let corners = [(0,0), (size-1,0), (0,size-1), (size-1,size-1)]
-for (x, y) in corners {
-    guard let color = bitmap.colorAt(x: x, y: y), color.alphaComponent < 0.01 else {
-        fputs("Corner alpha validation failed at \(x),\(y)\n", stderr)
+for point in [(0, 0), (pixels - 1, 0), (0, pixels - 1), (pixels - 1, pixels - 1)] {
+    guard let c = bitmap.colorAt(x: point.0, y: point.1), c.alphaComponent < 0.01 else {
+        FileHandle.standardError.write(Data("corner alpha validation failed\n".utf8))
         exit(6)
     }
 }
 
-guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(7) }
-try png.write(to: URL(fileURLWithPath: args[2]), options: .atomic)
+guard let png = bitmap.representation(using: .png, properties: [:]) else {
+    FileHandle.standardError.write(Data("could not encode PNG\n".utf8))
+    exit(7)
+}
+
+do {
+    try png.write(to: outputURL, options: .atomic)
+} catch {
+    FileHandle.standardError.write(Data(("write failed: \(error)\n").utf8))
+    exit(8)
+}
 SWIFT
 
 echo "      Swift tool: $SWIFT_BIN"
-if ! "$SWIFT_BIN" "$WORK/round_icon.swift" "$LOGO" "$MAC_ICON"; then
-  rc=$?
+set +e
+"$SWIFT_BIN" "$WORK/round_icon.swift" "$LOGO" "$MAC_ICON"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
   echo "ERROR: native icon renderer failed (exit $rc)."
   exit 24
 fi

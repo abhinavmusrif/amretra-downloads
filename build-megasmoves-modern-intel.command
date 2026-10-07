@@ -38,25 +38,71 @@ done
 
 mkdir -p "$WORK"
 
-CURRENT_STAGE="obtaining private Megas source"
-echo "[1/10] Syncing private Megas source..."
-if [ ! -d "$SRC/.git" ]; then
-  rm -rf "$SRC"
-  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    gh repo clone "$REPO" "$SRC" -- --branch "$BRANCH" --single-branch
+CURRENT_STAGE="authenticating GitHub"
+echo "[1/10] Preparing authenticated GitHub access..."
+
+GH_BIN="$(command -v gh || true)"
+if [ -z "$GH_BIN" ]; then
+  if command -v brew >/dev/null 2>&1; then
+    echo "      Installing GitHub CLI with Homebrew..."
+    brew install gh
+    GH_BIN="$(command -v gh || true)"
   else
-    set +e
-    git clone --branch "$BRANCH" --single-branch "https://github.com/$REPO.git" "$SRC"
-    rc=$?
-    set -e
-    if [ "$rc" -ne 0 ]; then
-      echo
-      echo "ERROR: The Megas repository is private and this Terminal is not authenticated to GitHub."
-      echo "Authenticate GitHub in Terminal, then run this same command again."
-      echo "If GitHub CLI is installed: gh auth login"
+    echo "      GitHub CLI not found; installing a portable Intel copy..."
+    GH_ROOT="$WORK/github-cli"
+    rm -rf "$GH_ROOT"
+    mkdir -p "$GH_ROOT"
+
+    RELEASE_JSON="$(curl -fsSL -H 'Accept: application/vnd.github+json' https://api.github.com/repos/cli/cli/releases/latest)"
+    GH_URL="$(printf '%s' "$RELEASE_JSON" | tr ',' '\n' | grep -Eo 'https://[^"]+gh_[^"]+_macOS_amd64\.(zip|tar\.gz)' | head -n 1 || true)"
+    if [ -z "$GH_URL" ]; then
+      echo "ERROR: Could not locate the current Intel macOS GitHub CLI package."
+      exit 4
+    fi
+
+    GH_ARCHIVE="$GH_ROOT/gh-download"
+    curl -fL "$GH_URL" -o "$GH_ARCHIVE"
+
+    case "$GH_URL" in
+      *.zip)
+        ditto -x -k "$GH_ARCHIVE" "$GH_ROOT/unpacked"
+        ;;
+      *.tar.gz)
+        mkdir -p "$GH_ROOT/unpacked"
+        tar -xzf "$GH_ARCHIVE" -C "$GH_ROOT/unpacked"
+        ;;
+      *)
+        echo "ERROR: Unsupported GitHub CLI archive."
+        exit 4
+        ;;
+    esac
+
+    GH_BIN="$(find "$GH_ROOT/unpacked" -type f -path '*/bin/gh' -perm +111 | head -n 1 || true)"
+    if [ -z "$GH_BIN" ]; then
+      echo "ERROR: GitHub CLI binary was not found after extraction."
       exit 4
     fi
   fi
+fi
+
+echo "      GitHub CLI: $GH_BIN"
+
+if ! "$GH_BIN" auth status --hostname github.com >/dev/null 2>&1; then
+  echo
+  echo "GitHub authentication is required once because MegasMoves is private."
+  echo "A browser/device login will open. Sign into the GitHub account that owns MegasMoves."
+  echo
+  "$GH_BIN" auth login --hostname github.com --git-protocol https --web
+fi
+
+"$GH_BIN" auth status --hostname github.com
+"$GH_BIN" auth setup-git
+
+CURRENT_STAGE="obtaining private Megas source"
+echo "      Syncing private Megas source..."
+if [ ! -d "$SRC/.git" ]; then
+  rm -rf "$SRC"
+  "$GH_BIN" repo clone "$REPO" "$SRC" -- --branch "$BRANCH" --single-branch
 else
   git -C "$SRC" fetch origin "$BRANCH"
   git -C "$SRC" checkout "$BRANCH"

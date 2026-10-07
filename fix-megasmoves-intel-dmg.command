@@ -98,12 +98,12 @@ echo "      Logo decoded."
 CURRENT_STAGE="rendering rounded transparent macOS icon"
 echo "[3/7] Rendering rounded transparent macOS icon..."
 MAC_ICON="$WORK/MegasMoves-macOS.png"
-SWIFT_BIN="$(command -v swift || true)"
-if [ -z "$SWIFT_BIN" ]; then
-  SWIFT_BIN="$(xcrun --find swift 2>/dev/null || true)"
+SWIFTC_BIN="$(command -v swiftc || true)"
+if [ -z "$SWIFTC_BIN" ]; then
+  SWIFTC_BIN="$(xcrun --find swiftc 2>/dev/null || true)"
 fi
-if [ -z "$SWIFT_BIN" ]; then
-  echo "ERROR: Swift toolchain is required to render the rounded macOS icon."
+if [ -z "$SWIFTC_BIN" ]; then
+  echo "ERROR: Swift compiler is required to render the rounded macOS icon."
   echo "Install Apple Command Line Tools with: xcode-select --install"
   exit 1
 fi
@@ -200,18 +200,30 @@ do {
 }
 SWIFT
 
-echo "      Swift tool: $SWIFT_BIN"
+RENDERER="$WORK/round_icon"
+echo "      Swift compiler: $SWIFTC_BIN"
+echo "      Compiling native icon renderer..."
 set +e
-"$SWIFT_BIN" "$WORK/round_icon.swift" "$LOGO" "$MAC_ICON"
-rc=$?
+"$SWIFTC_BIN" "$WORK/round_icon.swift" -framework AppKit -o "$RENDERER"
+compile_rc=$?
 set -e
-if [ "$rc" -ne 0 ]; then
-  echo "ERROR: native icon renderer failed (exit $rc)."
+if [ "$compile_rc" -ne 0 ] || [ ! -x "$RENDERER" ]; then
+  echo "ERROR: native icon renderer compilation failed (exit $compile_rc)."
   exit 24
+fi
+
+echo "      Running native icon renderer..."
+set +e
+"$RENDERER" "$LOGO" "$MAC_ICON"
+render_rc=$?
+set -e
+if [ "$render_rc" -ne 0 ]; then
+  echo "ERROR: native icon renderer failed (exit $render_rc)."
+  exit 25
 fi
 if [ ! -s "$MAC_ICON" ]; then
   echo "ERROR: rounded icon renderer produced no image."
-  exit 25
+  exit 26
 fi
 echo "      Rounded RGBA icon rendered and corner-alpha validated."
 
@@ -234,7 +246,7 @@ sips -z 1024 1024 "$MAC_ICON" --out "$ICONSET/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$ICONSET" -o "$ICNS"
 if [ ! -s "$ICNS" ]; then
   echo "ERROR: iconutil produced no ICNS."
-  exit 26
+  exit 27
 fi
 echo "      ICNS built."
 

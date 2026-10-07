@@ -62,21 +62,64 @@ MEGAS_LOGO_B64
 /usr/bin/base64 -D -i "$WORK/logo.b64" -o "$LOGO"
 test -s "$LOGO"
 
+MAC_ICON="$WORK/MegasMoves-macOS.png"
+SWIFT_BIN="$(command -v swift || true)"
+if [ -z "$SWIFT_BIN" ]; then
+  SWIFT_BIN="$(xcrun --find swift 2>/dev/null || true)"
+fi
+if [ -z "$SWIFT_BIN" ]; then
+  echo "ERROR: Swift toolchain is required to render the rounded macOS icon."
+  echo "Install Apple Command Line Tools with: xcode-select --install"
+  exit 1
+fi
+
+cat > "$WORK/round_icon.swift" <<'SWIFT'
+import AppKit
+import Foundation
+
+let args = CommandLine.arguments
+guard args.count == 3 else { exit(2) }
+let input = args[1]
+let output = args[2]
+guard let image = NSImage(contentsOfFile: input) else { exit(3) }
+
+let canvasSize = NSSize(width: 1024, height: 1024)
+let canvas = NSImage(size: canvasSize)
+canvas.lockFocus()
+NSColor.clear.set()
+NSRect(origin: .zero, size: canvasSize).fill()
+
+let inset: CGFloat = 64
+let rect = NSRect(x: inset, y: inset, width: 1024 - inset * 2, height: 1024 - inset * 2)
+let clip = NSBezierPath(roundedRect: rect, xRadius: 205, yRadius: 205)
+clip.addClip()
+image.draw(in: rect)
+canvas.unlockFocus()
+
+guard let tiff = canvas.tiffRepresentation,
+      let rep = NSBitmapImageRep(data: tiff),
+      let png = rep.representation(using: .png, properties: [:]) else { exit(4) }
+try png.write(to: URL(fileURLWithPath: output), options: .atomic)
+SWIFT
+
+"$SWIFT_BIN" "$WORK/round_icon.swift" "$LOGO" "$MAC_ICON"
+test -s "$MAC_ICON"
+
 ICONSET="$WORK/MegasMoves.iconset"
 ICNS="$WORK/MegasMoves.icns"
 mkdir -p "$ICONSET"
 
 echo "Generating native macOS icon..."
-sips -z 16 16     "$LOGO" --out "$ICONSET/icon_16x16.png" >/dev/null
-sips -z 32 32     "$LOGO" --out "$ICONSET/icon_16x16@2x.png" >/dev/null
-sips -z 32 32     "$LOGO" --out "$ICONSET/icon_32x32.png" >/dev/null
-sips -z 64 64     "$LOGO" --out "$ICONSET/icon_32x32@2x.png" >/dev/null
-sips -z 128 128   "$LOGO" --out "$ICONSET/icon_128x128.png" >/dev/null
-sips -z 256 256   "$LOGO" --out "$ICONSET/icon_128x128@2x.png" >/dev/null
-sips -z 256 256   "$LOGO" --out "$ICONSET/icon_256x256.png" >/dev/null
-sips -z 512 512   "$LOGO" --out "$ICONSET/icon_256x256@2x.png" >/dev/null
-sips -z 512 512   "$LOGO" --out "$ICONSET/icon_512x512.png" >/dev/null
-sips -z 1024 1024 "$LOGO" --out "$ICONSET/icon_512x512@2x.png" >/dev/null
+sips -z 16 16     "$MAC_ICON" --out "$ICONSET/icon_16x16.png" >/dev/null
+sips -z 32 32     "$MAC_ICON" --out "$ICONSET/icon_16x16@2x.png" >/dev/null
+sips -z 32 32     "$MAC_ICON" --out "$ICONSET/icon_32x32.png" >/dev/null
+sips -z 64 64     "$MAC_ICON" --out "$ICONSET/icon_32x32@2x.png" >/dev/null
+sips -z 128 128   "$MAC_ICON" --out "$ICONSET/icon_128x128.png" >/dev/null
+sips -z 256 256   "$MAC_ICON" --out "$ICONSET/icon_128x128@2x.png" >/dev/null
+sips -z 256 256   "$MAC_ICON" --out "$ICONSET/icon_256x256.png" >/dev/null
+sips -z 512 512   "$MAC_ICON" --out "$ICONSET/icon_256x256@2x.png" >/dev/null
+sips -z 512 512   "$MAC_ICON" --out "$ICONSET/icon_512x512.png" >/dev/null
+sips -z 1024 1024 "$MAC_ICON" --out "$ICONSET/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$ICONSET" -o "$ICNS"
 test -s "$ICNS"
 

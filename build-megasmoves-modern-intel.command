@@ -104,9 +104,16 @@ if [ ! -d "$SRC/.git" ]; then
   rm -rf "$SRC"
   "$GH_BIN" repo clone "$REPO" "$SRC" -- --branch "$BRANCH" --single-branch
 else
-  git -C "$SRC" fetch origin "$BRANCH"
-  git -C "$SRC" checkout "$BRANCH"
-  git -C "$SRC" reset --hard "origin/$BRANCH"
+  echo "      Resuming existing Megas source clone..."
+  # --single-branch clones do not always have a tracking ref for a new branch.
+  # Fetch it explicitly and create/reset the script-managed local branch.
+  git -C "$SRC" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+  if ! git -C "$SRC" diff --quiet || ! git -C "$SRC" diff --cached --quiet; then
+    echo "ERROR: The source clone contains uncommitted changes. Refusing to discard them."
+    echo "Review the clone at: $SRC"
+    exit 7
+  fi
+  git -C "$SRC" checkout -B "$BRANCH" "origin/$BRANCH"
 fi
 
 echo "      Source: $(git -C "$SRC" rev-parse --short HEAD)"

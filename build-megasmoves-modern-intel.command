@@ -99,24 +99,49 @@ fi
 "$GH_BIN" auth setup-git
 
 CURRENT_STAGE="obtaining private Megas source"
-echo "      Syncing private Megas source..."
+echo "      Preparing private Megas source..."
+# The exact product-source integration commit, independent of later CI edits.
+# It is safe to use this verified commit from the existing clone when GitHub DNS
+# cannot resolve. Never fall back to an arbitrary or unverified FETCH_HEAD.
+REQUIRED_SOURCE_COMMIT="f138c558b993e2b06899441e300342fac5bf0e26"
 if [ ! -d "$SRC/.git" ]; then
-  rm -rf "$SRC"
+  echo "      No cached checkout found; cloning authenticated private repo..."
   "$GH_BIN" repo clone "$REPO" "$SRC" -- --branch "$BRANCH" --single-branch
 else
   echo "      Resuming existing Megas source clone..."
-  # --single-branch clones do not always have a tracking ref for a new branch.
-  # Fetch it explicitly and create/reset the script-managed local branch.
-  git -C "$SRC" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
   if ! git -C "$SRC" diff --quiet || ! git -C "$SRC" diff --cached --quiet; then
-    echo "ERROR: The source clone contains uncommitted changes. Refusing to discard them."
+    echo "ERROR: Existing source clone has uncommitted changes; refusing to discard them."
     echo "Review the clone at: $SRC"
     exit 7
   fi
-  git -C "$SRC" checkout -B "$BRANCH" "origin/$BRANCH"
+
+  SOURCE_REF=""
+  echo "      Checking GitHub for updated source..."
+  if git -C "$SRC" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"; then
+    SOURCE_REF="refs/remotes/origin/$BRANCH"
+    if ! git -C "$SRC" merge-base --is-ancestor "$REQUIRED_SOURCE_COMMIT" "$SOURCE_REF"; then
+      echo "ERROR: Fetched source is missing the required native Mac integration commit."
+      exit 8
+    fi
+  else
+    echo "      GitHub could not be reached. Checking exact previously downloaded source commit..."
+    if git -C "$SRC" cat-file -e "${REQUIRED_SOURCE_COMMIT}^{commit}" 2>/dev/null; then
+      SOURCE_REF="$REQUIRED_SOURCE_COMMIT"
+      echo "      Verified exact cached Megas Mac integration commit. Proceeding offline."
+    else
+      echo "ERROR: GitHub DNS/network is unavailable and the required source commit is not cached."
+      echo "Fix your Mac's internet/DNS connection, then rerun this command."
+      exit 8
+    fi
+  fi
+  git -C "$SRC" checkout -B "$BRANCH" "$SOURCE_REF"
 fi
 
-echo "      Source: $(git -C "$SRC" rev-parse --short HEAD)"
+if ! git -C "$SRC" merge-base --is-ancestor "$REQUIRED_SOURCE_COMMIT" HEAD; then
+  echo "ERROR: Source verification failed: required native Mac integration commit is missing."
+  exit 8
+fi
+echo "      Source: $(git -C "$SRC" rev-parse --short HEAD) (verified)"
 
 CURRENT_STAGE="compiling SwiftUI shell"
 echo "[2/10] Compiling redesigned native SwiftUI shell..."

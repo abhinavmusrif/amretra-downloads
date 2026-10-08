@@ -259,6 +259,7 @@ if [ -x "$VPY" ]; then
       worker/tests/test_firebase_account.py \
       worker/tests/test_browser_operator_contract.py \
       worker/tests/test_browser_desktop_packaging.py \
+      worker/tests/test_browser_runtime_manifest_symlinks.py \
       worker/tests/local/test_peer_mesh_auth.py \
       worker/tests/local/test_peer_pairing_gate.py
   )

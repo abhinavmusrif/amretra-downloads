@@ -245,10 +245,33 @@ if [ -x "$VPY" ]; then
   "$VPY" -m pip install --upgrade pip setuptools wheel pyinstaller
   "$VPY" -m pip install -e "$SRC/worker[test]"
   if [ -f "$SRC/backend/requirements.txt" ]; then
-    "$VPY" -m pip install --only-binary=:all: -r "$SRC/backend/requirements.txt"
+    # This desktop build shares an environment with pyOpenSSL, which requires
+    # cryptography>=46,<48. The backend's exact 45.0.5 pin is intentionally
+    # preserved in Git; omit that one incompatible line only from an ephemeral
+    # Mac build requirements copy, and resolve the compatible driver once.
+    "$VPY" - "$SRC/backend/requirements.txt" "$WORK/backend-intel-requirements.txt" <<'PYREQ'
+from pathlib import Path
+import sys
+source, target = map(Path, sys.argv[1:])
+rows = source.read_text(encoding="utf-8").splitlines()
+out = [row for row in rows if row.strip() != "cryptography==45.0.5"]
+if len(rows) - len(out) != 1:
+    raise SystemExit("Expected one backend cryptography==45.0.5 pin; review backend dependencies before building")
+target.write_text("\n".join(out) + "\n", encoding="utf-8")
+PYREQ
+    "$VPY" -m pip install --only-binary=:all: -r "$WORK/backend-intel-requirements.txt" 'cryptography>=46,<48'
+  else
+    "$VPY" -m pip install 'cryptography>=46,<48'
   fi
-  "$VPY" -m pip install pydantic-settings psutil 'cryptography>=46,<48'
+  "$VPY" -m pip install pydantic-settings psutil
   "$VPY" -m pip check
+  "$VPY" - <<'PYCRYPTO'
+from importlib.metadata import version
+from packaging.version import Version
+installed = Version(version("cryptography"))
+assert Version("46.0.0") <= installed < Version("48.0.0"), installed
+print(f"      Verified compatible cryptography {installed} for Mac core")
+PYCRYPTO
 
   echo "      Running focused native operator and browser security tests..."
   (

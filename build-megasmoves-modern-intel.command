@@ -378,6 +378,52 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$UI_BIN" "$APP/Contents/MacOS/MegasMoves"
 cp "$CORE_BIN" "$APP/Contents/MacOS/MegasMoves.Core"
+MCP_LAUNCHER="$SRC/worker/scripts/macos_mcp_launcher.sh"
+test -s "$MCP_LAUNCHER"
+cp "$MCP_LAUNCHER" "$APP/Contents/MacOS/MegasMoves.MCP"
+chmod +x "$APP/Contents/MacOS/MegasMoves.MCP"
+
+# Optional, user-local Intel integration with OpenAI's official Secure MCP
+# Tunnel release. Verify its published checksum before installing; preserve
+# licensing artifacts in the app bundle. A tunnel needs explicit credentials.
+TUNNEL_VERSION="v0.0.16"
+TUNNEL_ASSET="tunnel-client-$TUNNEL_VERSION-darwin-amd64.zip"
+TUNNEL_DOWNLOAD="$WORK/openai-tunnel-$TUNNEL_VERSION"
+mkdir -p "$TUNNEL_DOWNLOAD"
+if [ ! -s "$TUNNEL_DOWNLOAD/$TUNNEL_ASSET" ]; then
+  echo "      Downloading official OpenAI Secure MCP Tunnel for Intel..."
+  curl -fLsS "https://github.com/openai/tunnel-client/releases/download/$TUNNEL_VERSION/$TUNNEL_ASSET" -o "$TUNNEL_DOWNLOAD/$TUNNEL_ASSET" || true
+fi
+if [ -s "$TUNNEL_DOWNLOAD/$TUNNEL_ASSET" ]; then
+  if curl -fLsS "https://github.com/openai/tunnel-client/releases/download/$TUNNEL_VERSION/SHA256SUMS.txt" -o "$TUNNEL_DOWNLOAD/SHA256SUMS.txt"; then
+    expected="$(awk -v name="$TUNNEL_ASSET" '$2 == name {print $1}' "$TUNNEL_DOWNLOAD/SHA256SUMS.txt")"
+    actual="$(shasum -a 256 "$TUNNEL_DOWNLOAD/$TUNNEL_ASSET" | awk '{print $1}')"
+    if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
+      echo "ERROR: OpenAI tunnel archive checksum does not match the official manifest."
+      exit 14
+    fi
+    rm -rf "$TUNNEL_DOWNLOAD/unpacked"
+    mkdir -p "$TUNNEL_DOWNLOAD/unpacked"
+    ditto -x -k "$TUNNEL_DOWNLOAD/$TUNNEL_ASSET" "$TUNNEL_DOWNLOAD/unpacked"
+    for executable in tunnel-client cloudflared; do
+      test -s "$TUNNEL_DOWNLOAD/unpacked/$executable"
+      cp "$TUNNEL_DOWNLOAD/unpacked/$executable" "$APP/Contents/MacOS/$executable"
+      chmod +x "$APP/Contents/MacOS/$executable"
+      file "$APP/Contents/MacOS/$executable" | grep -q 'x86_64'
+    done
+    mkdir -p "$APP/Contents/Resources/ThirdPartyLicenses/OpenAI-Secure-MCP-Tunnel"
+    for notice in LICENSE NOTICE "$TUNNEL_ASSET"; do
+      if [ -s "$TUNNEL_DOWNLOAD/unpacked/$notice" ] && [ "$notice" != "$TUNNEL_ASSET" ]; then
+        cp "$TUNNEL_DOWNLOAD/unpacked/$notice" "$APP/Contents/Resources/ThirdPartyLicenses/OpenAI-Secure-MCP-Tunnel/$notice"
+      fi
+    done
+    echo "      Verified and packaged OpenAI Tunnel $TUNNEL_VERSION for Intel."
+  else
+    echo "      WARNING: cannot verify the official tunnel SHA256SUMS; remote ChatGPT tunnel disabled."
+  fi
+else
+  echo "      WARNING: OpenAI Tunnel download unavailable; local MCP remains available."
+fi
 if [ -n "$BROWSER_RUNTIME" ] && [ -d "$BROWSER_RUNTIME" ]; then
   cp -R "$BROWSER_RUNTIME" "$APP/Contents/Resources/browser-runtime"
   if [ "$FULL_CORE" = "1" ]; then

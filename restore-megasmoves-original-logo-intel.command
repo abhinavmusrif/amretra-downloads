@@ -8,7 +8,7 @@ set -Eeuo pipefail
 # currently installed /Applications/Megas Moves.app.
 
 BRANCH="mac-intel-current-main-20261008"
-REQUIRED_SOURCE_COMMIT="beff2acbc49b6d3fb8c1a5742a00277f69a7c6f3"
+REQUIRED_SOURCE_COMMIT="a5a62ae8c7c5ed12850467c506481964daf532ba"
 BASE="$HOME/Downloads/MegasMoves-modern-build"
 SRC="$BASE/repo"
 PREVIOUS_APP="$BASE/Megas Moves.app"

@@ -340,17 +340,17 @@ else
   echo "      The new UI will capability-gate native Mac actions against this older core."
 fi
 
-CURRENT_STAGE="rendering Megas vector app icon"
-echo "[5/10] Rendering the same Megas mark used by the SwiftUI sidebar..."
+CURRENT_STAGE="rendering original Megas app icon"
+echo "[5/10] Restoring original cyan-arrow Megas branding..."
 ICON_WORK="$WORK/icon"
 mkdir -p "$ICON_WORK/MegasMoves.iconset"
 
-MARK_SOURCE="$SRC/worker/macos/MegasMoves.MacApp/Sources/MegasMoves/MegasBrandMark.swift"
+ORIGINAL_LOGO="$SRC/app/src/main/res/drawable/app_logo.png"
 RENDER_SOURCE="$SRC/worker/scripts/macos_brand_icon.swift"
-test -s "$MARK_SOURCE"
+test -s "$ORIGINAL_LOGO"
 test -s "$RENDER_SOURCE"
-swiftc -parse-as-library "$MARK_SOURCE" "$RENDER_SOURCE" -framework AppKit -framework SwiftUI -o "$ICON_WORK/render-megas-brand"
-"$ICON_WORK/render-megas-brand" "$ICON_WORK/icon.png"
+swiftc -parse-as-library "$RENDER_SOURCE" -framework AppKit -o "$ICON_WORK/render-megas-brand"
+"$ICON_WORK/render-megas-brand" "$ORIGINAL_LOGO" "$ICON_WORK/icon.png"
 
 for spec in \
   "16 16 icon_16x16.png" \
@@ -392,6 +392,10 @@ PYRUNTIME
   fi
 fi
 cp "$ICON_WORK/MegasMoves.icns" "$APP/Contents/Resources/MegasMoves.icns"
+cp "$ICON_WORK/icon.png" "$APP/Contents/Resources/MegasMovesBrand.png"
+cp "$ORIGINAL_LOGO" "$APP/Contents/Resources/MegasOriginalLogo.png"
+test -s "$APP/Contents/Resources/MegasMovesBrand.png"
+test -s "$APP/Contents/Resources/MegasOriginalLogo.png"
 chmod +x "$APP/Contents/MacOS/MegasMoves" "$APP/Contents/MacOS/MegasMoves.Core"
 
 BUILD_NUMBER="$(date +%Y%m%d%H%M%S)"

@@ -103,7 +103,7 @@ echo "      Preparing private Megas source..."
 # The exact product-source integration commit, independent of later CI edits.
 # It is safe to use this verified commit from the existing clone when GitHub DNS
 # cannot resolve. Never fall back to an arbitrary or unverified FETCH_HEAD.
-REQUIRED_SOURCE_COMMIT="9d9cb37f6eb154daa60c92e592b8b081440bab93"
+REQUIRED_SOURCE_COMMIT="fed6ad69ca960396ef76d07fcbbdb0e798b5bfeb"
 if [ ! -d "$SRC/.git" ]; then
   echo "      No cached checkout found; cloning authenticated private repo..."
   "$GH_BIN" repo clone "$REPO" "$SRC" -- --branch "$BRANCH" --single-branch

@@ -130,39 +130,97 @@ file "$UI_BIN"
 file "$UI_BIN" | grep -q "x86_64"
 echo "      Native Intel UI verified."
 
-CURRENT_STAGE="selecting Python"
-echo "[3/10] Preparing Megas core build..."
+CURRENT_STAGE="selecting compatible Python"
+echo "[3/10] Preparing Python 3.12 for the pinned Megas backend..."
+# backend/requirements.txt currently pins psycopg2-binary==2.9.9 and
+# tree-sitter-languages==1.10.2. They ship Intel macOS wheels for CPython 3.12,
+# but not 3.13. Keep the user's Python 3.13 and Apple system Python untouched.
+VENV="$WORK/venv"
 PY=""
-for candidate in python3.13 python3.12 python3.11 python3.14 python3; do
+for candidate in python3.12 /usr/local/bin/python3.12 /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12; do
   if command -v "$candidate" >/dev/null 2>&1; then
-    if "$candidate" - <<'PYVER' >/dev/null 2>&1
-import sys
-raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+    candidate_bin="$(command -v "$candidate")"
+    if "$candidate_bin" - <<'PYVER' >/dev/null 2>&1
+import platform, sys
+raise SystemExit(0 if sys.version_info[:2] == (3, 12) and platform.machine() == "x86_64" else 1)
 PYVER
     then
-      PY="$(command -v "$candidate")"
+      PY="$candidate_bin"
       break
     fi
   fi
 done
 
+if [ -z "$PY" ]; then
+  echo "      Python 3.12 is not installed. Preparing isolated managed Python 3.12..."
+  UV_BIN="$(command -v uv || true)"
+  if [ -z "$UV_BIN" ]; then
+    BOOTSTRAP_PY=""
+    for candidate in python3.13 /usr/local/bin/python3.13 python3; do
+      if command -v "$candidate" >/dev/null 2>&1; then
+        if "$candidate" - <<'PYVER' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PYVER
+        then
+          BOOTSTRAP_PY="$(command -v "$candidate")"
+          break
+        fi
+      fi
+    done
+    if [ -z "$BOOTSTRAP_PY" ]; then
+      echo "ERROR: Python 3.11+ is needed once to bootstrap uv. No system Python was modified."
+      exit 5
+    fi
+    BOOTSTRAP_VENV="$WORK/uv-bootstrap"
+    if [ ! -x "$BOOTSTRAP_VENV/bin/python" ]; then
+      "$BOOTSTRAP_PY" -m venv "$BOOTSTRAP_VENV"
+    fi
+    "$BOOTSTRAP_VENV/bin/python" -m pip install --only-binary=:all: 'uv>=0.8,<1'
+    UV_BIN="$BOOTSTRAP_VENV/bin/uv"
+  fi
+  export UV_PYTHON_INSTALL_DIR="$WORK/managed-python"
+  if [ -e "$VENV/bin/python" ] && ! "$VENV/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 12)' >/dev/null 2>&1; then
+    echo "      Replacing only the previous Megas build virtualenv (Python 3.13)."
+    rm -rf "$VENV"
+  fi
+  if [ ! -x "$VENV/bin/python" ]; then
+    "$UV_BIN" venv --python 3.12 --seed "$VENV"
+  fi
+  PY="$VENV/bin/python"
+else
+  if [ -x "$VENV/bin/python" ]; then
+    if ! "$VENV/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 12)' >/dev/null 2>&1; then
+      echo "      Replacing only the previous Megas build virtualenv (Python 3.13)."
+      rm -rf "$VENV"
+    fi
+  fi
+  if [ ! -x "$VENV/bin/python" ]; then
+    "$PY" -m venv "$VENV"
+  fi
+fi
+
+VPY="$VENV/bin/python"
+"$VPY" - <<'PYVER'
+import platform, sys
+print("      Selected build Python: " + sys.version)
+print("      Architecture: " + platform.machine())
+assert sys.version_info[:2] == (3, 12), "Backend wheel pins require CPython 3.12"
+assert platform.machine() == "x86_64", "Intel x86_64 Python required"
+PYVER
+
 FULL_CORE=0
 CORE_BIN=""
 BROWSER_RUNTIME=""
 
-if [ -n "$PY" ]; then
-  echo "      Python: $($PY --version)"
+if [ -x "$VPY" ]; then
+  echo "      Python: $($VPY --version)"
   CURRENT_STAGE="building current Megas core"
   echo "[4/10] Building current embedded Megas core..."
-  VENV="$WORK/venv"
-  if [ ! -x "$VENV/bin/python" ]; then
-    "$PY" -m venv "$VENV"
-  fi
-  VPY="$VENV/bin/python"
   "$VPY" -m pip install --upgrade pip setuptools wheel pyinstaller
   "$VPY" -m pip install -e "$SRC/worker[test]"
   if [ -f "$SRC/backend/requirements.txt" ]; then
-    "$VPY" -m pip install -r "$SRC/backend/requirements.txt"
+    "$VPY" -m pip install --only-binary=:all: -r "$SRC/backend/requirements.txt"
   fi
   "$VPY" -m pip install pydantic-settings psutil 'cryptography>=46,<48'
   "$VPY" -m pip check

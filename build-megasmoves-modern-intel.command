@@ -103,7 +103,7 @@ echo "      Preparing private Megas source..."
 # The exact product-source integration commit, independent of later CI edits.
 # It is safe to use this verified commit from the existing clone when GitHub DNS
 # cannot resolve. Never fall back to an arbitrary or unverified FETCH_HEAD.
-REQUIRED_SOURCE_COMMIT="a5a62ae8c7c5ed12850467c506481964daf532ba"
+REQUIRED_SOURCE_COMMIT="d783b378b118f370c532be533f01ac0ffbdc3864"
 if [ ! -d "$SRC/.git" ]; then
   echo "      No cached checkout found; cloning authenticated private repo..."
   "$GH_BIN" repo clone "$REPO" "$SRC" -- --branch "$BRANCH" --single-branch
@@ -280,6 +280,7 @@ PYCRYPTO
       worker/tests/test_native_desktop_bridge.py \
       worker/tests/test_native_desktop_peer_mesh.py \
       worker/tests/test_firebase_account.py \
+      worker/tests/local/test_device_pairing.py \
       worker/tests/test_browser_operator_contract.py \
       worker/tests/test_browser_desktop_packaging.py \
       worker/tests/test_browser_runtime_manifest_symlinks.py \

@@ -340,58 +340,29 @@ else
   echo "      The new UI will capability-gate native Mac actions against this older core."
 fi
 
-CURRENT_STAGE="rendering app icon"
-echo "[5/10] Rendering Megas macOS icon..."
-LOGO="$SRC/app/src/main/res/drawable/app_logo.png"
-test -s "$LOGO"
+CURRENT_STAGE="rendering Megas vector app icon"
+echo "[5/10] Rendering the same Megas mark used by the SwiftUI sidebar..."
 ICON_WORK="$WORK/icon"
-rm -rf "$ICON_WORK"
 mkdir -p "$ICON_WORK/MegasMoves.iconset"
 
-cat > "$ICON_WORK/round_icon.swift" <<'SWIFT'
-import AppKit
-import Foundation
+MARK_SOURCE="$SRC/worker/macos/MegasMoves.MacApp/Sources/MegasMoves/MegasBrandMark.swift"
+RENDER_SOURCE="$SRC/worker/scripts/macos_brand_icon.swift"
+test -s "$MARK_SOURCE"
+test -s "$RENDER_SOURCE"
+swiftc -parse-as-library "$MARK_SOURCE" "$RENDER_SOURCE" -framework AppKit -framework SwiftUI -o "$ICON_WORK/render-megas-brand"
+"$ICON_WORK/render-megas-brand" "$ICON_WORK/icon.png"
 
-guard CommandLine.arguments.count == 3 else { exit(2) }
-guard let source = NSImage(contentsOfFile: CommandLine.arguments[1]) else { exit(3) }
-let pixels = 1024
-let side = CGFloat(pixels)
-guard let bitmap = NSBitmapImageRep(
-    bitmapDataPlanes: nil,
-    pixelsWide: pixels,
-    pixelsHigh: pixels,
-    bitsPerSample: 8,
-    samplesPerPixel: 4,
-    hasAlpha: true,
-    isPlanar: false,
-    colorSpaceName: .deviceRGB,
-    bytesPerRow: 0,
-    bitsPerPixel: 0
-) else { exit(4) }
-bitmap.size = NSSize(width: side, height: side)
-guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else { exit(5) }
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = context
-let canvas = NSRect(x: 0, y: 0, width: side, height: side)
-NSColor.clear.setFill()
-canvas.fill(using: .copy)
-let inset: CGFloat = 64
-let rect = NSRect(x: inset, y: inset, width: side - inset * 2, height: side - inset * 2)
-NSBezierPath(roundedRect: rect, xRadius: 205, yRadius: 205).addClip()
-source.draw(in: rect, from: NSRect(origin: .zero, size: source.size), operation: .sourceOver, fraction: 1)
-context.flushGraphics()
-NSGraphicsContext.restoreGraphicsState()
-for point in [(0,0),(pixels-1,0),(0,pixels-1),(pixels-1,pixels-1)] {
-    guard let c = bitmap.colorAt(x: point.0, y: point.1), c.alphaComponent < 0.01 else { exit(6) }
-}
-guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(7) }
-try png.write(to: URL(fileURLWithPath: CommandLine.arguments[2]), options: .atomic)
-SWIFT
-
-swiftc "$ICON_WORK/round_icon.swift" -framework AppKit -o "$ICON_WORK/round_icon"
-"$ICON_WORK/round_icon" "$LOGO" "$ICON_WORK/icon.png"
-
-for spec in   "16 16 icon_16x16.png"   "32 32 icon_16x16@2x.png"   "32 32 icon_32x32.png"   "64 64 icon_32x32@2x.png"   "128 128 icon_128x128.png"   "256 256 icon_128x128@2x.png"   "256 256 icon_256x256.png"   "512 512 icon_256x256@2x.png"   "512 512 icon_512x512.png"   "1024 1024 icon_512x512@2x.png"; do
+for spec in \
+  "16 16 icon_16x16.png" \
+  "32 32 icon_16x16@2x.png" \
+  "32 32 icon_32x32.png" \
+  "64 64 icon_32x32@2x.png" \
+  "128 128 icon_128x128.png" \
+  "256 256 icon_128x128@2x.png" \
+  "256 256 icon_256x256.png" \
+  "512 512 icon_256x256@2x.png" \
+  "512 512 icon_512x512.png" \
+  "1024 1024 icon_512x512@2x.png"; do
   set -- $spec
   sips -z "$1" "$2" "$ICON_WORK/icon.png" --out "$ICON_WORK/MegasMoves.iconset/$3" >/dev/null
 done

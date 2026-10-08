@@ -1,7 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-BRANCH="mac-dmg-build-intel-20261006"
+BRANCH="mac-intel-current-main-20261008"
 REPO="abhinavmusrif/megasmoves"
 WORK="$HOME/Downloads/MegasMoves-modern-build"
 SRC="$WORK/repo"
@@ -160,10 +160,17 @@ if [ -n "$PY" ]; then
   "$VPY" -m pip install pydantic-settings psutil 'cryptography>=46,<48'
   "$VPY" -m pip check
 
-  echo "      Running focused operator tests..."
+  echo "      Running focused native operator and browser security tests..."
   (
     cd "$SRC"
-    "$VPY" -m pytest -q       worker/tests/test_native_desktop_bridge.py       worker/tests/test_native_core_mcp_stdio.py       worker/tests/test_browser_operator_contract.py       worker/tests/test_shared_context.py       worker/tests/test_actions.py       worker/tests/local/test_peer_mesh_auth.py       worker/tests/local/test_peer_pairing_gate.py
+    "$VPY" -m pytest -q --basetemp "$WORK/pytest-intel" \
+      worker/tests/test_native_desktop_bridge.py \
+      worker/tests/test_native_desktop_peer_mesh.py \
+      worker/tests/test_firebase_account.py \
+      worker/tests/test_browser_operator_contract.py \
+      worker/tests/test_browser_desktop_packaging.py \
+      worker/tests/local/test_peer_mesh_auth.py \
+      worker/tests/local/test_peer_pairing_gate.py
   )
 
   echo "      Building verified Megas Browser runtime..."
@@ -287,6 +294,17 @@ cp "$UI_BIN" "$APP/Contents/MacOS/MegasMoves"
 cp "$CORE_BIN" "$APP/Contents/MacOS/MegasMoves.Core"
 if [ -n "$BROWSER_RUNTIME" ] && [ -d "$BROWSER_RUNTIME" ]; then
   cp -R "$BROWSER_RUNTIME" "$APP/Contents/Resources/browser-runtime"
+  if [ "$FULL_CORE" = "1" ]; then
+    echo "      Verifying packaged browser runtime manifest..."
+    PYTHONPATH="$SRC/worker" "$VPY" - "$APP/Contents/Resources/browser-runtime" <<'PYRUNTIME'
+import sys
+from pathlib import Path
+from megas.browser_runtime_manifest import verify_runtime_manifest
+root = Path(sys.argv[1])
+result = verify_runtime_manifest(root, expected_playwright_version="1.61.0")
+print(f"      Verified browser payload: {result['file_count']} files")
+PYRUNTIME
+  fi
 fi
 cp "$ICON_WORK/MegasMoves.icns" "$APP/Contents/Resources/MegasMoves.icns"
 chmod +x "$APP/Contents/MacOS/MegasMoves" "$APP/Contents/MacOS/MegasMoves.Core"
